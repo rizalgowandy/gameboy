@@ -140,14 +140,7 @@ impl Memory for Mmu {
             0xff0f => self.intf.borrow_mut().sb(0xff0f, v),
             0xff10..=0xff3f => self.apu.sb(a, v),
             0xff40..=0xff45 => self.gpu.sb(a, v),
-            0xff46 => {
-                assert!(v <= 0xf1);
-                let base = u16::from(v) << 8;
-                for i in 0..0xa0 {
-                    let b = self.lb(base + i);
-                    self.sb(0xfe00 + i, b);
-                }
-            }
+            0xff46 => self.dma_transfer(v),
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4f => self.gpu.sb(a, v),
             0xff51..=0xff55 => self.hdma.sb(a, v),
@@ -177,6 +170,15 @@ impl Mmu {
                     n => n as usize,
                 };
             }
+        }
+    }
+
+    fn dma_transfer(&mut self, v: u8) {
+        assert!(v <= 0xf1);
+        let base = u16::from(v) << 8;
+        for i in 0..0xa0 {
+            let b = self.lb(base + i);
+            self.sb(0xfe00 + i, b);
         }
     }
 
