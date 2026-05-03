@@ -702,7 +702,10 @@ impl Memory for Gpu {
             0xff49 => self.op1,
             0xff4a => self.wy,
             0xff4b => self.wx,
-            0xff4f => 0xfe | self.ram_bank as u8,
+            0xff4f => match self.term {
+                Term::DMG => 0xff,
+                Term::CGB => 0xfe | self.ram_bank as u8,
+            },
             0xff68 => self.cbgpi.get(),
             0xff69 => {
                 let r = self.cbgpi.i as usize >> 3;
@@ -765,7 +768,10 @@ impl Memory for Gpu {
             0xff49 => self.op1 = v,
             0xff4a => self.wy = v,
             0xff4b => self.wx = v,
-            0xff4f => self.ram_bank = (v & 0x01) as usize,
+            0xff4f => match self.term {
+                Term::DMG => {}
+                Term::CGB => self.ram_bank = (v & 0x01) as usize,
+            },
             0xff68 => self.cbgpi.set(v),
             0xff69 => {
                 let r = self.cbgpi.i as usize >> 3;

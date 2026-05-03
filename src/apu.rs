@@ -914,7 +914,7 @@ impl Memory for Apu {
                 let e = if self.channel4.reg.borrow().get_trigger() { 8 } else { 0 };
                 a | b | c | d | e
             }
-            0xff27..=0xff2f => 0x00,
+            0xff27..=0xff2f => 0xff,
             0xff30..=0xff3f => self.channel3.lb(a),
             _ => unreachable!(),
         };

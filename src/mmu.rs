@@ -152,8 +152,11 @@ impl Memory for Mmu {
             0xff04..=0xff07 => self.timer.lb(a),
             0xff0f => self.intf.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
+            0xff40..=0xff45 => self.gpu.lb(a),
+            0xff46 => 0xff,
+            0xff47..=0xff4b => self.gpu.lb(a),
+            0xff4f => self.gpu.lb(a),
             0xff4c..=0xff7f if self.term == Term::DMG => 0xff,
-            0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.lb(a),
             0xff51..=0xff55 => self.hdma.lb(a),
             0xff68..=0xff6b => self.gpu.lb(a),
             0xff70 => self.wram_bank as u8,
@@ -178,10 +181,8 @@ impl Memory for Mmu {
             0xff04..=0xff07 => self.timer.sb(a, v),
             0xff0f => self.intf.borrow_mut().sb(0xff0f, v),
             0xff10..=0xff3f => self.apu.sb(a, v),
+            0xff40..=0xff45 => self.gpu.sb(a, v),
             0xff46 => {
-                // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
-                // table).
-                // See: http://gbdev.gg8.se/wiki/articles/Video_Display#FF46_-_DMA_-_DMA_Transfer_and_Start_Address_.28R.2FW.29
                 assert!(v <= 0xf1);
                 let base = u16::from(v) << 8;
                 for i in 0..0xa0 {
@@ -189,8 +190,9 @@ impl Memory for Mmu {
                     self.sb(0xfe00 + i, b);
                 }
             }
+            0xff47..=0xff4b => self.gpu.sb(a, v),
+            0xff4f => self.gpu.sb(a, v),
             0xff4c..=0xff7f if self.term == Term::DMG => {}
-            0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.sb(a, v),
             0xff51..=0xff55 => self.hdma.sb(a, v),
             0xff68..=0xff6b => self.gpu.sb(a, v),
             0xff70 => {
