@@ -25,6 +25,7 @@ pub enum HdmaMode {
 }
 
 pub struct Hdma {
+    pub term: Term,
     // These two registers specify the address at which the transfer will read data from. Normally, this should be
     // either in ROM, SRAM or WRAM, thus either in range 0000-7FF0 or A000-DFF0. [Note : this has yet to be tested on
     // Echo RAM, OAM, FEXX, IO and HRAM]. Trying to specify a source address in VRAM will cause garbage to be copied.
@@ -39,13 +40,16 @@ pub struct Hdma {
 }
 
 impl Hdma {
-    pub fn power_up() -> Self {
-        Self { src: 0x0000, dst: 0x8000, active: false, mode: HdmaMode::Gdma, remain: 0x00 }
+    pub fn power_up(term: Term) -> Self {
+        Self { term, src: 0x0000, dst: 0x8000, active: false, mode: HdmaMode::Gdma, remain: 0x00 }
     }
 }
 
 impl Memory for Hdma {
     fn lb(&self, a: u16) -> u8 {
+        if self.term == Term::DMG {
+            return 0xff;
+        }
         match a {
             0xff51 => (self.src >> 8) as u8,
             0xff52 => self.src as u8,
@@ -57,6 +61,9 @@ impl Memory for Hdma {
     }
 
     fn sb(&mut self, a: u16, v: u8) {
+        if self.term == Term::DMG {
+            return;
+        }
         match a {
             0xff51 => self.src = (u16::from(v) << 8) | (self.src & 0x00ff),
             0xff52 => self.src = (self.src & 0xff00) | u16::from(v & 0xf0),
@@ -680,6 +687,9 @@ impl Gpu {
 
 impl Memory for Gpu {
     fn lb(&self, a: u16) -> u8 {
+        if self.term == Term::DMG && a >= 0xff68 && a <= 0xff6b {
+            return 0xff;
+        }
         match a {
             0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000],
             0xfe00..=0xfe9f => self.oam[a as usize - 0xfe00],
@@ -739,6 +749,9 @@ impl Memory for Gpu {
     }
 
     fn sb(&mut self, a: u16, v: u8) {
+        if self.term == Term::DMG && a >= 0xff68 && a <= 0xff6b {
+            return;
+        }
         match a {
             0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v,
             0xfe00..=0xfe9f => self.oam[a as usize - 0xfe00] = v,

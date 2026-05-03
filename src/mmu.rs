@@ -47,7 +47,7 @@ impl Mmu {
             term,
             timer: Timer::power_up(term, intf.clone()),
             intf: intf.clone(),
-            hdma: Hdma::power_up(),
+            hdma: Hdma::power_up(term),
             hram: [0x00; 0x7f],
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
@@ -93,6 +93,92 @@ impl Mmu {
         self.apu.next(gpu_cycles);
         gpu_cycles
     }
+}
+
+impl Memory for Mmu {
+    fn lb(&self, a: u16) -> u8 {
+        match a {
+            0x0000..=0x7fff => self.cartridge.lb(a),
+            0x8000..=0x9fff => self.gpu.lb(a),
+            0xa000..=0xbfff => self.cartridge.lb(a),
+            0xc000..=0xcfff => self.wram[a as usize - 0xc000],
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
+            0xe000..=0xfdff => self.lb(a - 0x2000),
+            0xfe00..=0xfe9f => self.gpu.lb(a),
+            0xfea0..=0xfeff => 0xff,
+            0xff00 => self.joypad.lb(a),
+            0xff01..=0xff02 => self.serial.lb(a),
+            0xff04..=0xff07 => self.timer.lb(a),
+            0xff0f => self.intf.borrow().lb(0xff0f),
+            0xff10..=0xff3f => self.apu.lb(a),
+            0xff40..=0xff45 => self.gpu.lb(a),
+            0xff46 => 0xff,
+            0xff47..=0xff4b => self.gpu.lb(a),
+            0xff4f => self.gpu.lb(a),
+            0xff51..=0xff55 => self.hdma.lb(a),
+            0xff68..=0xff6b => self.gpu.lb(a),
+            0xff70 => self.get_wram_bank() as u8,
+            0xff80..=0xfffe => self.hram[a as usize - 0xff80],
+            0xffff => self.intf.borrow().lb(0xffff),
+            _ => 0xff,
+        }
+    }
+
+    fn sb(&mut self, a: u16, v: u8) {
+        match a {
+            0x0000..=0x7fff => self.cartridge.sb(a, v),
+            0x8000..=0x9fff => self.gpu.sb(a, v),
+            0xa000..=0xbfff => self.cartridge.sb(a, v),
+            0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
+            0xe000..=0xfdff => self.sb(a - 0x2000, v),
+            0xfe00..=0xfe9f => self.gpu.sb(a, v),
+            0xfea0..=0xfeff => {}
+            0xff00 => self.joypad.sb(a, v),
+            0xff01..=0xff02 => self.serial.sb(a, v),
+            0xff04..=0xff07 => self.timer.sb(a, v),
+            0xff0f => self.intf.borrow_mut().sb(0xff0f, v),
+            0xff10..=0xff3f => self.apu.sb(a, v),
+            0xff40..=0xff45 => self.gpu.sb(a, v),
+            0xff46 => {
+                assert!(v <= 0xf1);
+                let base = u16::from(v) << 8;
+                for i in 0..0xa0 {
+                    let b = self.lb(base + i);
+                    self.sb(0xfe00 + i, b);
+                }
+            }
+            0xff47..=0xff4b => self.gpu.sb(a, v),
+            0xff4f => self.gpu.sb(a, v),
+            0xff51..=0xff55 => self.hdma.sb(a, v),
+            0xff68..=0xff6b => self.gpu.sb(a, v),
+            0xff70 => self.set_wram_bank(v),
+            0xff80..=0xfffe => self.hram[a as usize - 0xff80] = v,
+            0xffff => self.intf.borrow_mut().sb(0xffff, v),
+            _ => {}
+        }
+    }
+}
+
+impl Mmu {
+    fn get_wram_bank(&self) -> usize {
+        match self.term {
+            Term::DMG => 0xff,
+            Term::CGB => self.wram_bank,
+        }
+    }
+
+    fn set_wram_bank(&mut self, v: u8) {
+        match self.term {
+            Term::DMG => return,
+            Term::CGB => {
+                self.wram_bank = match v & 0x7 {
+                    0 => 1,
+                    n => n as usize,
+                };
+            }
+        }
+    }
 
     fn run_dma(&mut self) -> u32 {
         if !self.hdma.active {
@@ -132,78 +218,6 @@ impl Mmu {
             self.hdma.remain = 0x7f;
         } else {
             self.hdma.remain -= 1;
-        }
-    }
-}
-
-impl Memory for Mmu {
-    fn lb(&self, a: u16) -> u8 {
-        match a {
-            0x0000..=0x7fff => self.cartridge.lb(a),
-            0x8000..=0x9fff => self.gpu.lb(a),
-            0xa000..=0xbfff => self.cartridge.lb(a),
-            0xc000..=0xcfff => self.wram[a as usize - 0xc000],
-            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
-            0xe000..=0xfdff => self.lb(a - 0x2000),
-            0xfe00..=0xfe9f => self.gpu.lb(a),
-            0xfea0..=0xfeff => 0xff,
-            0xff00 => self.joypad.lb(a),
-            0xff01..=0xff02 => self.serial.lb(a),
-            0xff04..=0xff07 => self.timer.lb(a),
-            0xff0f => self.intf.borrow().lb(0xff0f),
-            0xff10..=0xff3f => self.apu.lb(a),
-            0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => 0xff,
-            0xff47..=0xff4b => self.gpu.lb(a),
-            0xff4f => self.gpu.lb(a),
-            0xff4c..=0xff7f if self.term == Term::DMG => 0xff,
-            0xff51..=0xff55 => self.hdma.lb(a),
-            0xff68..=0xff6b => self.gpu.lb(a),
-            0xff70 => self.wram_bank as u8,
-            0xff80..=0xfffe => self.hram[a as usize - 0xff80],
-            0xffff => self.intf.borrow().lb(0xffff),
-            _ => 0xff,
-        }
-    }
-
-    fn sb(&mut self, a: u16, v: u8) {
-        match a {
-            0x0000..=0x7fff => self.cartridge.sb(a, v),
-            0x8000..=0x9fff => self.gpu.sb(a, v),
-            0xa000..=0xbfff => self.cartridge.sb(a, v),
-            0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
-            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
-            0xe000..=0xfdff => self.sb(a - 0x2000, v),
-            0xfe00..=0xfe9f => self.gpu.sb(a, v),
-            0xfea0..=0xfeff => {}
-            0xff00 => self.joypad.sb(a, v),
-            0xff01..=0xff02 => self.serial.sb(a, v),
-            0xff04..=0xff07 => self.timer.sb(a, v),
-            0xff0f => self.intf.borrow_mut().sb(0xff0f, v),
-            0xff10..=0xff3f => self.apu.sb(a, v),
-            0xff40..=0xff45 => self.gpu.sb(a, v),
-            0xff46 => {
-                assert!(v <= 0xf1);
-                let base = u16::from(v) << 8;
-                for i in 0..0xa0 {
-                    let b = self.lb(base + i);
-                    self.sb(0xfe00 + i, b);
-                }
-            }
-            0xff47..=0xff4b => self.gpu.sb(a, v),
-            0xff4f => self.gpu.sb(a, v),
-            0xff4c..=0xff7f if self.term == Term::DMG => {}
-            0xff51..=0xff55 => self.hdma.sb(a, v),
-            0xff68..=0xff6b => self.gpu.sb(a, v),
-            0xff70 => {
-                self.wram_bank = match v & 0x7 {
-                    0 => 1,
-                    n => n as usize,
-                };
-            }
-            0xff80..=0xfffe => self.hram[a as usize - 0xff80] = v,
-            0xffff => self.intf.borrow_mut().sb(0xffff, v),
-            _ => {}
         }
     }
 }
